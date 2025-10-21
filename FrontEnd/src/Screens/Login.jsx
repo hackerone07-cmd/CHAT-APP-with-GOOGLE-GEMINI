@@ -1,11 +1,14 @@
-import { Link, useNavigate } from 'react-router-dom'
-import axios from '../Config/Axios.config'
-import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom';
+import axios from '../Config/Axios.config';
+import { useContext, useState } from 'react';
+import {UserContext} from "../Context/user.context";
 
 function Login() {
 
   const [email, setEmail] =useState('')
   const [password, setPassword] = useState('');
+
+  const {setUser } = useContext(UserContext);
 
   const navigate = useNavigate()
 
@@ -16,6 +19,9 @@ function Login() {
         password
        }).then((res) =>{
         console.log(res.data);
+
+        localStorage.setItem('token', res.data.token);
+        setUser(res.data.user); 
         navigate('/')
        }).catch((err)=>{
         console.log(err.response.data);
@@ -49,7 +55,7 @@ function Login() {
         </form>
         <p className="mt-4 text-center text-sm">
           Don’t have an account?{' '}
-          <Link to="/users/register" className="text-blue-400 hover:underline">
+          <Link to="/register" className="text-blue-400 hover:underline">
             Create one
           </Link>
         </p>

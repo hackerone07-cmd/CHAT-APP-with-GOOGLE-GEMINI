@@ -1,16 +1,21 @@
-import React,{ createContext, useState, useContext, Children} from "react";
+import React, { createContext, useState, useContext } from 'react';
 
-const UserContext = createContext();
+export const UserContext = createContext();
 
-export const UserProvider = ({children})=>{
-    const [user, setUser] = useState(null);
-    return (
-        <useContext.Provider value={{user,setUser}}>
-            {children}
-        </useContext.Provider>
-    )
-}
+export const UserProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
 
-export const useUser =()=>{
-    return useContext(UserContext)
-}
+  return (
+    <UserContext.Provider value={{ user, setUser }}>
+      {children}
+    </UserContext.Provider>
+  );
+};
+
+export const useUser = () => {
+  const context = useContext(UserContext);
+  if (!context) {
+    throw new Error('useUser must be used within a UserProvider');
+  }
+  return context;
+};

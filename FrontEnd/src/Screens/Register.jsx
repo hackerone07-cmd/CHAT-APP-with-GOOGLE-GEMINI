@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import axios from '../Config/Axios.config'
-import { useState } from 'react'
+import { useContext, useState } from 'react'
+import { UserContext } from '../Context/user.context'
 function Register() {
 
   const navigate = useNavigate()
@@ -9,6 +10,7 @@ function Register() {
   const [password,setPassword] =useState('')
 
 
+  const {setUser } = useContext(UserContext);
 
   function sumbitHandler(e) {
     e.preventDefault()
@@ -17,7 +19,9 @@ function Register() {
       email,
       password
     }).then((res)=>{
-      console.log(res.data)
+      console.log(res.data);
+      localStorage.setItem('token', res.data.token);
+        setUser(res.data.user); 
       navigate("/")
     }).catch((err)=>{
       console.log(err.response.data);
@@ -50,7 +54,7 @@ function Register() {
         </form>
         <p className="mt-4 text-center text-sm">
           Already have an account?{' '}
-          <Link to="/users/login" className="text-green-400 hover:underline">
+          <Link to="/login" className="text-green-400 hover:underline">
             Login
           </Link>
         </p>

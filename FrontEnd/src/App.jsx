@@ -4,7 +4,10 @@ import { UserProvider } from './Context/user.context'
 const App = () => {
   return (
     <div>
-     <AppRoute/>
+      <UserProvider>
+        <AppRoute/>
+      </UserProvider>
+     
     </div>
   )
 }
