@@ -14,34 +14,43 @@ const Home = () => {
 function createProject(e) {
   e.preventDefault();
 
-  if (!projectName.trim()) return;
+  if (!projectName?.trim()) return;
 
- console.log({projectName}); // Now it's an object
-
-
-  axios.post("/projects/create",{
-    name:projectName,
-  }).then((res) =>{
-    console.log(res)
-    setIsModalOpen(false)
-  }).catch((err)=>{
-   console.log(err)
+  axios.post("/projects/create", {
+    name: projectName,
   })
-
-  
-  setProjectName("");
-  setIsModalOpen(false);
+  .then((res) => {
+    console.log(res);
+    // Fetch updated project list after creation
+    axios.get('/projects/all')
+      .then((res) => setProject(res.data.projects))
+      .catch((err) => console.error('Error refreshing projects:', err));
+    setIsModalOpen(false);
+    setProjectName("");
+  })
+  .catch((err) => {
+    console.error('Error creating project:', err);
+  });
 }
 
-useEffect(()=>{
-       axios.get('/projects/all').then((res)=>{
-        console.log(res.data.projects)
-        setProject(res.data.projects)
-       }).catch((err)=>{
-        console.log(err)
-       })
-},[])
-  
+useEffect(() => {
+  const fetchProjects = async () => {
+    try {
+      const response = await axios.get('/projects/all');
+      setProject(response.data.projects);
+    } catch (error) {
+      console.error('Error fetching projects:', error);
+    }
+  };
+
+  fetchProjects();
+
+  // Set up polling to refresh projects every 30 seconds
+  const intervalId = setInterval(fetchProjects, 30000);
+
+  // Cleanup interval on component unmount
+  return () => clearInterval(intervalId);
+}, []); // Empty dependency array to run only on mount
 
   return (
     <main className="p-4">
@@ -118,4 +127,3 @@ useEffect(()=>{
 };
 
 export default Home;
- 

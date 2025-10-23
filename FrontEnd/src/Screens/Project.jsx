@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState,useContext,useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import axios from "../Config/axios.config"
+import axios from "../Config/axios.config.js"
+import {initializeSocket,receiveMessage,sendMessage} from "../Config/socket.config.js"
+import { UserContext } from '../Context/user.context'
 
 const Project = () => {
   const location = useLocation()
@@ -11,9 +13,14 @@ const Project = () => {
   const [users, setUsers] = useState([]) // all users
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-
+  const [message, setMessage] = useState("");
+  const {user} = useContext(UserContext);
+  const messageBox = useRef(null)
   // project object (set from /projects/get-project/...)
   const [project, setProject] = useState(null)
+
+  // NEW: messages state (rendered declaratively instead of DOM-manipulation)
+  const [messages, setMessages] = useState([])
 
   // store selected user ids (string) using Set for toggling
   const [selectedUserIds, setSelectedUserIds] = useState(new Set())
@@ -29,6 +36,8 @@ const Project = () => {
 
   // helper to get stable string id from various user shapes
   const getIdFromUser = (u) => String(u?._id ?? u?.id ?? u?.email ?? u?.user_unique_id ?? u?.web_id ?? u ?? '')
+
+  const myEmail = user?.email || currentUser?.email || 'You'
 
   // fetch latest project and normalize users -> full objects
   const fetchProject = async () => {
@@ -56,20 +65,37 @@ const Project = () => {
     }
   }
 
-  // try to refresh current user from API (optional)
-  useEffect(() => {
-    axios
-      .get('/auth/me')
-      .then((res) => {
-        const me = res?.data?.user ?? res?.data ?? null
-        if (me) setCurrentUser(me)
-      })
-      .catch(() => {
-        /* ignore if endpoint missing */
-      })
-  }, [])
+  function sendMessageHandler(){
+    if (!message?.trim()) return
+    const payload = {
+      message: message.trim(),
+      sender: myEmail,
+      timestamp: new Date().toISOString()
+    }
+
+    // send payload object
+    sendMessage('project-message', payload)
+
+    // update messages state (creates a new message div in the messages list)
+    setMessages(prev => [...prev, { ...payload, direction: 'outgoing', id: Date.now() }])
+    setMessage("")
+  }
+   
 
   useEffect(() => {
+    // initialize socket (may be a no-op if socket already exists)
+    const socket = initializeSocket(projectId)
+
+    // handler should accept the data object
+    const onProjectMessage = (data) => {
+      console.log("New project message received:", data);
+      // add incoming message to state (renders on left)
+      setMessages(prev => [...prev, { ...data, direction: 'incoming', id: Date.now() }])
+    }
+
+    // register listener via helper
+    receiveMessage('project-message', onProjectMessage);
+
     let mounted = true
     setLoading(true)
 
@@ -142,8 +168,27 @@ const Project = () => {
 
     return () => {
       mounted = false
+      // cleanup listener; don't forcibly disconnect global socket here
+      try {
+        if (socket && typeof socket.off === 'function') {
+          socket.off('project-message', onProjectMessage)
+        }
+      } catch (e) {
+        // ignore cleanup errors
+      }
     }
   }, [projectId, currentUser])
+
+  // scroll to bottom when messages array changes
+  useEffect(() => {
+    const box = messageBox.current
+    if (box) {
+      // small timeout to allow DOM render
+      requestAnimationFrame(() => {
+        box.scrollTop = box.scrollHeight
+      })
+    }
+  }, [messages])
 
   const toggleSelection = (id) => {
     setSelectedUserIds((prev) => {
@@ -264,24 +309,126 @@ const Project = () => {
         </div>
 
         {/* Message Area */}
-        <div className="flex-1 space-y-4 overflow-y-auto">
-          <div className="bg-white p-3 w-72 rounded-lg shadow-sm">
-            <h3 className="text-sm font-semibold">{project?.name ?? 'Project'}</h3>
-            <p className="text-sm text-gray-700">Lorem ipsum dolor sit amet. Lorem ipsum dolor sit amet.</p>
+        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+          {/* Messages container */}
+          <div
+            ref={messageBox}
+            id='message-box'
+            className="flex-1 overflow-auto p-4 flex flex-col scroll-smooth gap-3"
+            style={{ 
+              scrollbarWidth: 'none',  // Firefox
+              msOverflowStyle: 'none',  // IE/Edge
+              '&::-webkit-scrollbar': {  // Chrome/Safari/Webkit
+                display: 'none'
+              }
+            }}
+            aria-live="polite"
+          >
+            {messages.length === 0 ? (
+              <div className="text-center text-sm text-gray-500">No messages yet</div>
+            ) : (
+              messages.map((m) => {
+                const isOutgoing = (m.direction === 'outgoing') || (m.sender === myEmail)
+                return (
+                  <div
+                    key={m.id}
+                    className={`max-w-[70%] w-fit break-words p-2 rounded-lg border-none shadow-sm ${
+                      isOutgoing
+                        ? 'self-end bg-blue-600 text-white'
+                        : 'self-start bg-white border'
+                    }`}
+                    role="article"
+                    aria-label={`${isOutgoing ? 'Sent' : 'Received'} message`}
+                  >
+                    <div className="text-[9px] font-semibold mb-1">{ isOutgoing ? 'You' : (m.sender || 'Anonymous') }</div>
+                    <div className="text-sm">{String(m.message)}</div>
+                    <div className="text-[8px] text-gray-400 mt-1 text-right">{ new Date(m.timestamp || Date.now()).toLocaleTimeString() }</div>
+                  </div>
+                )
+              })
+            )}
           </div>
-          <div className="bg-white p-3 ml-auto w-72 rounded-lg shadow-sm">
-            <h3 className="text-sm font-semibold">{project?.name ?? 'Project'}</h3>
-            <p className="text-sm text-gray-700">Lorem ipsum dolor sit amet.</p>
+
+          {/* Input area */}
+          <div className="mt-4 flex items-center bg-white rounded-full px-3 py-2 shadow-sm">
+            <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') sendMessageHandler() }}
+              type="text"
+              placeholder="Enter message"
+              className="flex-1 outline-none text-sm text-gray-700 bg-transparent"
+            />
+            <button onClick={sendMessageHandler} className="text-blue-500 text-xl ml-2" aria-label="Send message">
+              <i className="ri-send-plane-2-fill"></i>
+            </button>
           </div>
         </div>
 
-        {/* Message Input */}
-        <div className="mt-4 flex items-center bg-white rounded-full px-3 py-2 shadow-sm">
-          <input type="text" placeholder="Enter message" className="flex-1 outline-none text-sm text-gray-700 bg-transparent" />
-          <button className="text-blue-500 text-xl">
-            <i className="ri-send-plane-2-fill"></i>
-          </button>
-        </div>
+        {/* Modal */}
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setIsModalOpen(false)} />
+
+            <div role="dialog" aria-modal="true" className="relative bg-white rounded-lg w-full max-w-2xl mx-auto shadow-lg overflow-hidden">
+              <header className="flex justify-between items-center p-4 border-b">
+                <h3 className="text-lg font-semibold">Select collaborator(s)</h3>
+                <button className="text-2xl leading-none p-2 rounded-md hover:bg-gray-100" onClick={() => setIsModalOpen(false)} aria-label="Close modal">
+                  <i className="ri-close-line"></i>
+                </button>
+              </header>
+
+              <div className="p-4 max-h-[60vh] overflow-auto">
+                <div className="flex flex-col gap-2">
+                  {loading ? (
+                    <p className="text-center">Loading...</p>
+                  ) : users.length > 0 ? (
+                    users.map((u) => {
+                      const id = getIdFromUser(u)
+                      const email = u?.email ?? ''
+                      const active = selectedUserIds.has(id)
+                      return (
+                        <button
+                          key={id || email}
+                          onClick={() => toggleSelection(id)}
+                          className={`w-full text-left p-3 rounded-lg flex items-center gap-3 hover:bg-gray-50 transition ${active ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-white'}`}
+                          aria-pressed={active}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium">
+                            {(email?.charAt(0) ?? '?').toUpperCase()}
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium">{email || u.name || id}</div>
+                            {u.name && <div className="text-sm text-gray-500">{u.name}</div>}
+                          </div>
+                          {active && (
+                            <div className="text-blue-600 text-xl">
+                              <i className="ri-checkbox-circle-fill"></i>
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })
+                  ) : (
+                    <p className="text-center text-gray-500">No users found</p>
+                  )}
+                </div>
+              </div>
+
+              <footer className="flex justify-between items-center gap-2 p-4 border-t">
+                <div className="text-sm text-gray-500">Selected: {selectedList.length}</div>
+                <div>
+                  <button className="px-4 py-2 rounded-md bg-gray-100 mr-2" onClick={() => setIsModalOpen(false)}>
+                    Cancel
+                  </button>
+                  <button className="px-4 py-2 bg-blue-600 text-white rounded-md" onClick={addCollaborators}>
+                    Confirm
+                  </button>
+                </div>
+              </footer>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Right Panel */}
@@ -309,71 +456,6 @@ const Project = () => {
           Manage Collaborators
         </button>
       </div>
-
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setIsModalOpen(false)} />
-
-          <div role="dialog" aria-modal="true" className="relative bg-white rounded-lg w-full max-w-2xl mx-auto shadow-lg overflow-hidden">
-            <header className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-semibold">Select collaborator(s)</h3>
-              <button className="text-2xl leading-none p-2 rounded-md hover:bg-gray-100" onClick={() => setIsModalOpen(false)} aria-label="Close modal">
-                <i className="ri-close-line"></i>
-              </button>
-            </header>
-
-            <div className="p-4 max-h-[60vh] overflow-auto">
-              <div className="flex flex-col gap-2">
-                {loading ? (
-                  <p className="text-center">Loading...</p>
-                ) : users.length > 0 ? (
-                  users.map((u) => {
-                    const id = getIdFromUser(u)
-                    const email = u?.email ?? ''
-                    const active = selectedUserIds.has(id)
-                    return (
-                      <button
-                        key={id || email}
-                        onClick={() => toggleSelection(id)}
-                        className={`w-full text-left p-3 rounded-lg flex items-center gap-3 hover:bg-gray-50 transition ${active ? 'bg-blue-50 ring-2 ring-blue-200' : 'bg-white'}`}
-                        aria-pressed={active}
-                      >
-                        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium">
-                          {(email?.charAt(0) ?? '?').toUpperCase()}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-medium">{email || u.name || id}</div>
-                          {u.name && <div className="text-sm text-gray-500">{u.name}</div>}
-                        </div>
-                        {active && (
-                          <div className="text-blue-600 text-xl">
-                            <i className="ri-checkbox-circle-fill"></i>
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })
-                ) : (
-                  <p className="text-center text-gray-500">No users found</p>
-                )}
-              </div>
-            </div>
-
-            <footer className="flex justify-between items-center gap-2 p-4 border-t">
-              <div className="text-sm text-gray-500">Selected: {selectedList.length}</div>
-              <div>
-                <button className="px-4 py-2 rounded-md bg-gray-100 mr-2" onClick={() => setIsModalOpen(false)}>
-                  Cancel
-                </button>
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-md" onClick={addCollaborators}>
-                  Confirm
-                </button>
-              </div>
-            </footer>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

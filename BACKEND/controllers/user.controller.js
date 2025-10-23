@@ -18,8 +18,9 @@ export const createUserController = async (req, res) => {
 export const loginUserController = async (req, res) => {
   try {
     const { email, password } = req.body;
-
+    
     const user = await User.findOne({ email }).select("+password");
+console.log(user)
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
