@@ -1,5 +1,5 @@
 import React from 'react'
-import AppRoute from './Routes/appRoute'
+import AppRoute from './Routes/AppRoute'
 import { UserProvider } from './Context/user.context'
 const App = () => {
   return (

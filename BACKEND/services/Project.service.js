@@ -81,7 +81,7 @@ export const  addUserToProject= async({projectId , users, userId})=>{
 
 }
 
-export const getProjectById = async({projectId})=>{
+export const getProjectByIdIn = async({projectId})=>{
         if(!projectId){
           throw new Error("project id is required")
         }

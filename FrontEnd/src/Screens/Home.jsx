@@ -1,11 +1,15 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { UserContext } from "../Context/user.context";
 import axios from "../Config/axios.config"
+import {useNavigate} from "react-router-dom"
 
 const Home = () => {
   const { user } = useContext(UserContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectName, setProjectName] = useState(null);
+  const [project,setProject] = useState([]);
+  
+  const navigate = useNavigate()
 
 function createProject(e) {
   e.preventDefault();
@@ -29,19 +33,48 @@ function createProject(e) {
   setIsModalOpen(false);
 }
 
+useEffect(()=>{
+       axios.get('/projects/all').then((res)=>{
+        console.log(res.data.projects)
+        setProject(res.data.projects)
+       }).catch((err)=>{
+        console.log(err)
+       })
+},[])
+  
 
   return (
     <main className="p-4">
-      <div className="projects">
+      <div className="projects flex flex-wrap gap-3">
         <button
           onClick={() => setIsModalOpen(true)}
-          className="project border font-bold text-2xl border-slate-300 rounded-md p-4"
+          className="project border cursor-pointer text-2xl border-slate-300 rounded-md p-4"
         >
           New Project
           <i className="ri-link ml-2"></i>
         </button>
-      </div>
+        {
+          project.map((project)=>(
+            <div onClick={()=> {navigate(`/project`,{
+                     state:{project}
+            })
+            }} key={project._id} className="project border min-w-52 hover:bg-emerald-300 flex flex-col gap-2 cursor-pointer text-2xl border-slate-300 rounded-md p-4">
+             <h2 className="font-semibold"> {project.name }</h2>
+              
 
+               <div className="flex gap-2">
+                <p><i className="ri-user-line"></i><small> Collaborators:</small></p>
+                 {project.users.length}
+               </div>
+               </div>
+               
+          ))
+        }
+
+        
+        
+      </div>
+      
       {isModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
           <div className="bg-white p-6 rounded-md w-1/3">
