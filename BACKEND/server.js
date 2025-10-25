@@ -5,6 +5,9 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import ProjectModel from "./models/Project.model.js";
+import { generateResult } from "./services/ai.service.js";
+import { measureMemory } from "vm";
+import { sensitiveHeaders } from "http2";
 const port = process.env.PORT || 3000;
 
 const server = http.createServer(app);
@@ -44,19 +47,45 @@ io.use(async(socket, next) => {
     }
 });
 
-io.on("connection",(socket)=>{
-    console.log("a user connected");
+io.on("connection", (socket)=>{
+   
     socket.join(socket.projectId._id.toString());
-    socket.on("project-message",(data)=>{
-        console.log({data})
-        socket.broadcast.to(socket.projectId._id.toString()).emit("project-message",data);
+    console.log("a user connected");
+  
+    socket.on("project-message", async(data)=>{
+        const message = data.message;
+        console.log("message received:", message);
+
+        const aiPresentInMessage = message.toLowerCase().includes("@ai"); 
+
+        if(aiPresentInMessage) {
+            // Send typing indicator
+            socket.emit("project-message", {
+                message: "AI is typing...",
+                sender: "AI Assistant",
+                timestamp: new Date().toISOString()
+            });
+
+            const prompt = message.replace('@ai', '').trim();
+            const aiResponse = await generateResult(prompt);
+            
+            io.to(socket.projectId._id.toString()).emit("project-message", {
+                message: aiResponse,
+                sender: "AI Assistant",
+                timestamp: new Date().toISOString()
+            });
+        } else {
+            // Forward regular messages with proper structure
+            socket.broadcast.to(socket.projectId._id.toString()).emit("project-message", {
+                ...data,
+                timestamp: new Date().toISOString()
+            });
+        }
     });
     
-    socket.on("event", data => { 
-        console.log("event received:", data);
-    });
     socket.on("disconnect",()=>{
         console.log("user disconnected");
+        socket.leave(socket.projectId._id.toString());
     });
 });
 

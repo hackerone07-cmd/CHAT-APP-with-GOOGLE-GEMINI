@@ -1,8 +1,10 @@
-import React, { useEffect, useState,useContext,useRef } from 'react'
+import React, { useEffect, useState, useContext, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
+import ReactDOM from 'react-dom'
 import axios from "../Config/axios.config.js"
-import {initializeSocket,receiveMessage,sendMessage} from "../Config/socket.config.js"
+import { initializeSocket, receiveMessage, sendMessage } from "../Config/socket.config.js"
 import { UserContext } from '../Context/user.context'
+import Markdown from 'markdown-to-jsx';  // Add this import
 
 const Project = () => {
   const location = useLocation()
@@ -17,7 +19,7 @@ const Project = () => {
   const {user} = useContext(UserContext);
   const messageBox = useRef(null)
   // project object (set from /projects/get-project/...)
-  const [project, setProject] = useState(null)
+  // Removed unused project state
 
   // NEW: messages state (rendered declaratively instead of DOM-manipulation)
   const [messages, setMessages] = useState([])
@@ -39,31 +41,7 @@ const Project = () => {
 
   const myEmail = user?.email || currentUser?.email || 'You'
 
-  // fetch latest project and normalize users -> full objects
-  const fetchProject = async () => {
-    if (!projectId) return
-    try {
-      const res = await axios.get(`/projects/get-project/${projectId}`)
-      const proj = res?.data?.project ?? res?.data ?? null
-      if (!proj) {
-        setProject(null)
-        setSelectedUserIds(new Set())
-        return
-      }
-      const rawProjectUsers = proj?.users ?? proj?.collaborators ?? proj?.members ?? []
-      const projectUsersFull = Array.isArray(rawProjectUsers)
-        ? rawProjectUsers.map((pu) => {
-            const idStr = getIdFromUser(pu)
-            const matched = users.find((u) => getIdFromUser(u) === idStr)
-            return matched ?? (typeof pu === 'object' ? pu : { _id: idStr })
-          })
-        : []
-      setProject({ ...proj, users: projectUsersFull })
-      setSelectedUserIds(new Set(projectUsersFull.map((u) => getIdFromUser(u))))
-    } catch (err) {
-      console.error('fetchProject error', err)
-    }
-  }
+  // Removed unused project fetching functionality
 
   function sendMessageHandler(){
     if (!message?.trim()) return
@@ -119,38 +97,13 @@ const Project = () => {
         setUsers(allUsers)
 
         if (proj) {
-          // normalize project.users (may be objectIds) to full user objects where possible
-          const rawProjectUsers = proj?.users ?? proj?.collaborators ?? proj?.members ?? []
-          const normalize = (v) => getIdFromUser(v)
-          const projectUsersFull = Array.isArray(rawProjectUsers)
-            ? rawProjectUsers.map((pu) => {
-                const idStr = normalize(pu)
-                const matched = allUsers.find((u) => getIdFromUser(u) === idStr)
-                return matched ?? (typeof pu === 'object' ? pu : { _id: idStr })
-              })
-            : []
-
-          // ensure currentUser is included
-          const myId = currentUser ? getIdFromUser(currentUser) : null
-          if (myId && !projectUsersFull.some((u) => getIdFromUser(u) === myId)) {
-            const matched = allUsers.find((u) => getIdFromUser(u) === myId)
-            projectUsersFull.unshift(matched ?? (currentUser && typeof currentUser === 'object' ? currentUser : { _id: myId }))
-          }
-
-          setProject({ ...proj, users: projectUsersFull })
-
-          // initialize selectedUserIds from project users
-          const collabIds = projectUsersFull.map((u) => getIdFromUser(u))
-          setSelectedUserIds(new Set(collabIds))
-        } else {
-          // no project: still add current user if available to selection
+          // Set current user as initial selection
           if (currentUser) {
             const myId = getIdFromUser(currentUser)
             if (myId) setSelectedUserIds(new Set([myId]))
           } else {
             setSelectedUserIds(new Set())
           }
-          setProject(null)
         }
 
         setError(null)
@@ -173,7 +126,7 @@ const Project = () => {
         if (socket && typeof socket.off === 'function') {
           socket.off('project-message', onProjectMessage)
         }
-      } catch (e) {
+      } catch {
         // ignore cleanup errors
       }
     }
@@ -199,46 +152,7 @@ const Project = () => {
     })
   }
 
-  async function addCollaborators() {
-    if (!projectId) {
-      console.warn('No projectId to add collaborators')
-      setIsModalOpen(false)
-      return
-    }
 
-    try {
-      // send only IDs (most backends expect ids); server will persist and return updated project
-      const ids = Array.from(selectedUserIds)
-      await axios.put('/projects/add-user', {
-        projectId,
-          users: ids
-      })
-
-      // re-fetch project to reflect server state (and normalize to full user objects)
-      await fetchProject()
-      setIsModalOpen(false)
-    } catch (err) {
-      console.error('addCollaborators error', err)
-    }
-  }
-
-  // helpers to display selected collaborators (prefer project.users which now contains full objects)
-  const selectedList = Array.from(selectedUserIds)
-  const lookupUser = (id) => {
-    const idStr = String(id)
-    const fromProject = (project?.users ?? []).find((u) => getIdFromUser(u) === idStr)
-    if (fromProject) return fromProject
-    return users.find((u) => getIdFromUser(u) === idStr) ?? (currentUser && getIdFromUser(currentUser) === idStr ? currentUser : null)
-  }
-
-  const selectedDetails = selectedList.map((id) => {
-    const u = lookupUser(id)
-    return {
-      id,
-      label: u ? `${u.email ?? u.name ?? u._id ?? u.id}` : id,
-      full: u
-    }
-  })
 
   return (
     <div className="bg-gray-100 h-screen flex">
@@ -272,18 +186,12 @@ const Project = () => {
                     className={`user flex items-center gap-2 p-4 rounded-md cursor-pointer ${
                       active ? 'bg-blue-600 text-white' : 'hover:bg-gray-400'
                     }`}
-                    role="button"
-                    tabIndex={0}
                     onClick={() => toggleSelection(id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') toggleSelection(id)
-                    }}
-                    aria-pressed={active}
                   >
                     <div className="w-fit h-fit flex justify-center items-center rounded-full p-5 bg-gray-50 text-black">
                       <i className="ri-user-fill"></i>
                     </div>
-                    <h1 className="w-full font-semibold text-lg">{email || u.name || 'unknown'}</h1>
+                    <h1 className="w-full font-semibold text-lg">{email || 'unknown'}</h1>
                     {active && <span className="ml-2 text-xl">✓</span>}
                   </div>
                 )
@@ -314,25 +222,23 @@ const Project = () => {
           <div
             ref={messageBox}
             id='message-box'
-            className="flex-1 overflow-auto p-4 flex flex-col scroll-smooth gap-3"
+            className="flex-1 overflow-y-auto overflow-x-hidden p-4 flex flex-col scroll-smooth gap-3 no-scrollbar"
             style={{ 
               scrollbarWidth: 'none',  // Firefox
-              msOverflowStyle: 'none',  // IE/Edge
-              '&::-webkit-scrollbar': {  // Chrome/Safari/Webkit
-                display: 'none'
-              }
+              msOverflowStyle: 'none'  // IE/Edge
             }}
             aria-live="polite"
           >
-            {messages.length === 0 ? (
+              {messages.length === 0 ? (
               <div className="text-center text-sm text-gray-500">No messages yet</div>
             ) : (
               messages.map((m) => {
                 const isOutgoing = (m.direction === 'outgoing') || (m.sender === myEmail)
+                const isAI = m.sender === "AI Assistant"
                 return (
                   <div
                     key={m.id}
-                    className={`max-w-[70%] w-fit break-words p-2 rounded-lg border-none shadow-sm ${
+                    className={`${isAI ? 'max-w-[95%]' : 'max-w-[70%]'} w-auto break-words p-2 rounded-lg border-none shadow-sm ${
                       isOutgoing
                         ? 'self-end bg-blue-600 text-white'
                         : 'self-start bg-white border'
@@ -341,7 +247,23 @@ const Project = () => {
                     aria-label={`${isOutgoing ? 'Sent' : 'Received'} message`}
                   >
                     <div className="text-[9px] font-semibold mb-1">{ isOutgoing ? 'You' : (m.sender || 'Anonymous') }</div>
-                    <div className="text-sm">{String(m.message)}</div>
+                    {/* Render AI responses as markdown, keep others plain text. Ensure wrapping to avoid horizontal scroll */}
+                    {isAI ? (
+                      <div className="text-sm max-h-auto overflow-auto whitespace-pre-wrap break-words prose prose-sm dark:prose-invert p-1 bg-transparent">
+                        {(() => {
+                          try {
+                            // Try to parse as JSON and extract text
+                            const jsonContent = JSON.parse(m.message);
+                            return jsonContent.text || String(m.message);
+                          } catch {
+                            // If not JSON, return as is
+                            return String(m.message);
+                          }
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="text-sm whitespace-pre-wrap break-words overflow-hidden max-w-full">{String(m.message)}</div>
+                    )}
                     <div className="text-[8px] text-gray-400 mt-1 text-right">{ new Date(m.timestamp || Date.now()).toLocaleTimeString() }</div>
                   </div>
                 )
@@ -415,46 +337,57 @@ const Project = () => {
                 </div>
               </div>
 
-              <footer className="flex justify-between items-center gap-2 p-4 border-t">
-                <div className="text-sm text-gray-500">Selected: {selectedList.length}</div>
-                <div>
-                  <button className="px-4 py-2 rounded-md bg-gray-100 mr-2" onClick={() => setIsModalOpen(false)}>
-                    Cancel
-                  </button>
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-md" onClick={addCollaborators}>
-                    Confirm
-                  </button>
-                </div>
+              <footer className="flex justify-end items-center gap-2 p-4 border-t">
+                <button className="px-4 py-2 rounded-md bg-gray-100" onClick={() => setIsModalOpen(false)}>
+                  Close
+                </button>
               </footer>
             </div>
           </div>
         )}
       </div>
 
-      {/* Right Panel */}
-      <div className="w-2/3 bg-white p-6">
-        <h2 className="text-lg font-semibold mb-4">Project Area</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Selected collaborator(s):
-          <span className="font-medium ml-2">{selectedDetails.length ? selectedDetails.map((s) => s.label).join(', ') : 'none'}</span>
-        </p>
-
-        {/* show chips without remove button (no remove route) */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {selectedDetails.length ? (
-            selectedDetails.map((s) => (
-              <div key={s.id} className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full">
-                <span className="text-sm">{s.label}</span>
-              </div>
-            ))
-          ) : (
-            <span className="text-sm text-gray-500">No collaborators</span>
-          )}
+      {/* Right Panel - Code Display Area */}
+      <div className="w-2/3 bg-white p-6 flex flex-col h-full">
+        <h2 className="text-lg font-semibold mb-4">AI Generated Code</h2>
+        <div className="flex-1 overflow-y-auto">
+          {messages.filter(m => m.sender === "AI Assistant").map((m) => {
+            try {
+              const content = m.message;
+              if (content.code) {
+                return (
+                  <div key={m.id} className="mb-6 bg-gray-50 rounded-lg p-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-gray-700">
+                        {content.language || 'Code'}
+                      </span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(content.code);
+                        }}
+                        className="text-blue-600 hover:text-blue-700 text-sm"
+                      >
+                        Copy Code
+                      </button>
+                    </div>
+                    <pre className="overflow-x-auto p-4 bg-gray-800 rounded text-gray-100 text-sm">
+                      <code>{content.code}</code>
+                    </pre>
+                    {content.explanation && (
+                      <div className="mt-2 text-sm text-gray-600">
+                        {content.explanation}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+            } catch {
+              // Not a code message, skip
+              return null;
+            }
+            return null;
+          })}
         </div>
-
-        <button className="px-4 py-2 bg-blue-600 text-white rounded-md" onClick={() => setIsModalOpen(true)}>
-          Manage Collaborators
-        </button>
       </div>
     </div>
   )
